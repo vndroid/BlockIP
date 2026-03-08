@@ -4,8 +4,8 @@
  *
  * @package BlockIP
  * @author Kokororin
- * @version 1.0.1
- * @update: 2019.04.03
+ * @version 1.0.2
+ * @update: 2019.05.21
  * @link https://github.com/Vndroid/BlockIP
  */
 class BlockIP_Plugin implements Typecho_Plugin_Interface
@@ -21,7 +21,7 @@ class BlockIP_Plugin implements Typecho_Plugin_Interface
     }
     public static function config(Typecho_Widget_Helper_Form $form)
     {
-        $ips = new Typecho_Widget_Helper_Form_Element_Textarea('ips', null, null, _t('IP 黑名单列表'), _t('一行一个，支持规则<br>以下是例子<br>192.168.1.1<br>210.10.2.1-20<br>222.34.4.*<br>218.192.104.*'));
+        $ips = new Typecho_Widget_Helper_Form_Element_Textarea('ips', null, null, _t('IP 黑名单列表'), _t('一行一个，支持以下规则：<br>192.168.1.1<br>210.10.2.1-20<br>222.34.4.*<br>注意：列表中请勿存在空行！！'));
         $form->addInput($ips);
     }
     public static function personalConfig(Typecho_Widget_Helper_Form $form)
@@ -53,6 +53,7 @@ class BlockIP_Plugin implements Typecho_Plugin_Interface
     }
     private static function makePregIP($str)
     {
+        $preg_limit = '';
         if (strpos($str, "-") !== false) {
             $aIP = explode(".", $str);
             foreach ($aIP as $key => $value) {
