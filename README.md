@@ -12,6 +12,7 @@ Block some IP access blog system.
 
 * When the plugin update, please disable the plugin before updating.
 * The plugin directory name should be 'BlockIP'.
+* DON'T HAVE BLANK LINE!!!
 
 ### Features
 
