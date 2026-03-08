@@ -51,7 +51,29 @@ class Plugin implements PluginInterface
     public static function config(Form $form): void
     {
         $ips = new Textarea('ips', null, null, _t('IP 黑名单列表'), _t('一行一个，支持以下规则：<br>192.168.1.1<br>210.10.2.1-20<br>222.34.4.*<br>注意：列表中请勿存在空行！！'));
+        $ips->addRule([self::class, 'checkNoEmptyLines'], _t('IP 黑名单列表中不能包含空行'));
         $form->addInput($ips);
+    }
+
+    /**
+     * 检查是否有空行
+     *
+     * @param string|null $text
+     * @return bool
+     */
+    public static function checkNoEmptyLines(?string $text): bool
+    {
+        if (empty($text)) {
+            return true;
+        }
+
+        $lines = explode("\n", str_replace("\r\n", "\n", $text));
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                return false;
+            }
+        }
+        return true;
     }
     public static function personalConfig(Form $form)
     {}
