@@ -22,4 +22,4 @@ Block some IP access blog system.
 
 [@kokororin](https://github.com/kokororin)
 
-[@Cain](https://github.com/Vndroid)
+[@Pain](https://github.com/vndroid)
