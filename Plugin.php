@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 禁止指定 IP 访问站点
  *
  * @package BlockIP
- * @author Kokororin
+ * @author Vex
  * @version 1.1.0
  * @link https://github.com/vndroid/BlockIP
  */
@@ -107,7 +107,7 @@ class Plugin implements PluginInterface
 
         if ($ipTable) {
             foreach ($ipTable as $value) {
-                if (preg_match("{$value}", $ip)) {
+                if (preg_match("$value", $ip)) {
                     $flag = true;
                     break;
                 }
