@@ -27,4 +27,10 @@ git remote set-head origin -a
 
 ## 开发者
 
-感谢插件原作者 [@kokororin](https://github.com/kokororin) ，目前维护者 [@Pain](https://github.com/vndroid)。
+<a href="https://github.com/vndroid/BlockIP/graphs/contributors">
+<img src="https://contrib.rocks/image?repo=vndroid/BlockIP" />
+</a>
+
+和插件原作者
+
+[@kokororin](https://github.com/kokororin)
