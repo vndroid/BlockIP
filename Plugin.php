@@ -66,9 +66,8 @@ class Plugin implements PluginInterface
             . '210.10.2.1-20　　区间（任意一段均可，闭区间）<br>'
             . '222.34.4.*　　　 通配（等价于 0-255）<br>'
             . '192.168.1.0/24　 CIDR<br>'
-            . '注意：仅支持 IPv4；列表中请勿存在空行！！'
+            . '仅支持 IPv4；空行会被忽略。'
         ));
-        $ips->addRule([self::class, 'checkNoEmptyLines'], _t('IP 黑名单列表中不能包含空行'));
         $ips->addRule([self::class, 'checkRules'], _t('IP 黑名单列表中存在无法识别的规则'));
         $form->addInput($ips);
 
@@ -91,27 +90,6 @@ class Plugin implements PluginInterface
             '仅在上方「可信代理网段」非空时生效。常见取值：X-Forwarded-For、X-Real-IP、CF-Connecting-IP。留空则使用 X-Forwarded-For。'
         ));
         $form->addInput($proxyHeader);
-    }
-
-    /**
-     * 检查是否有空行
-     *
-     * @param string|null $text
-     * @return bool
-     */
-    public static function checkNoEmptyLines(?string $text): bool
-    {
-        if (empty($text)) {
-            return true;
-        }
-
-        $lines = explode("\n", str_replace("\r\n", "\n", $text));
-        foreach ($lines as $line) {
-            if (trim($line) === '') {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**

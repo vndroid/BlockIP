@@ -8,8 +8,8 @@ Current language: **English** | [简体中文](/README_CN.md)
 
 ## HighLight
 
-* When the plugin updates, please disable the plugin before updating.
-* DON'T HAVE A BLANK LINE!!!
+* When the plugin updates, please disable and then re-enable the plugin — the hook registration is refreshed on activation.
+* Blank lines in the rule lists are ignored.
 
 ## Usage
 
@@ -45,6 +45,16 @@ By default the plugin matches against the TCP peer address (`REMOTE_ADDR`) only 
 If your site sits behind Cloudflare, an nginx reverse proxy, etc., `REMOTE_ADDR` is the proxy itself. Put the proxy's address or network into the "trusted proxies" field (same syntax as above); only then will the plugin parse the configured proxy header and take the **right-most untrusted** address in it as the visitor IP.
 
 > Never put visitor networks into the trusted proxies field — that is equivalent to letting anyone spoof their own IP.
+
+## Tests
+
+The repository ships a dependency-free regression suite. `tests/stubs.php` replaces the Typecho runtime the plugin depends on with minimal stand-ins, so neither Typecho nor PHPUnit is required:
+
+```bash
+php tests/run.php
+```
+
+It covers rule matching, proxy-header spoofing, exception type and status code, contact-mail fallback, hook registration and role exemptions. Exit code 0 means everything passed. Please run it after changing `Plugin.php`.
 
 ## Author
 

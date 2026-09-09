@@ -56,6 +56,16 @@ git remote set-head origin -a
 
 > 切勿在「可信代理网段」中填入访客网段——那等同于允许任意访客伪造自己的 IP。
 
+### 测试
+
+仓库自带一套零依赖的回归测试，`tests/stubs.php` 用最小实现顶掉插件依赖的 Typecho 运行时，因此不需要装 Typecho 也不需要 PHPUnit：
+
+```bash
+php tests/run.php
+```
+
+覆盖规则匹配、代理头伪造、异常类型与状态码、联系邮箱回退、钩子挂载点与权限豁免等场景，退出码 0 表示全部通过。改动 `Plugin.php` 后请先跑一遍。
+
 ## 开发者
 
 <a href="https://github.com/vndroid/BlockIP/graphs/contributors">
