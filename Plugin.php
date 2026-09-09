@@ -22,7 +22,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package BlockIP
  * @author Vex
- * @version 1.3.0
+ * @version 1.4.0
  * @link https://github.com/vndroid/BlockIP
  */
 class Plugin implements PluginInterface
@@ -66,7 +66,9 @@ class Plugin implements PluginInterface
             . '210.10.2.1-20　　区间（任意一段均可，闭区间）<br>'
             . '222.34.4.*　　　 通配（等价于 0-255）<br>'
             . '192.168.1.0/24　 CIDR<br>'
-            . '仅支持 IPv4；空行会被忽略。'
+            . '2001:db8::1　　　 IPv6 单个地址<br>'
+            . '2001:db8::/32　　IPv6 前缀<br>'
+            . '区间与通配只适用于 IPv4；IPv6 请用单个地址或前缀。空行会被忽略。'
         ));
         $ips->addRule([self::class, 'checkRules'], _t('IP 黑名单列表中存在无法识别的规则'));
         $form->addInput($ips);
@@ -285,6 +287,9 @@ class Plugin implements PluginInterface
 
     /**
      * 校验并规范化一个 IP 字符串
+     *
+     * IPv4-mapped 地址(::ffff:192.0.2.1)会被还原成 IPv4 写法: 双栈监听的机器上
+     * REMOTE_ADDR 常常是这种形式, 不归一化的话现有的 IPv4 规则会静默失效。
      */
     private static function sanitizeIp(?string $ip): ?string
     {
@@ -296,7 +301,43 @@ class Plugin implements PluginInterface
 
         $ip = filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6);
 
-        return $ip === false ? null : $ip;
+        if ($ip === false) {
+            return null;
+        }
+
+        return self::unmapIpv4($ip);
+    }
+
+    /**
+     * 把 IPv4-mapped / IPv4-compatible 的 IPv6 地址还原为 IPv4 写法, 其余原样返回
+     */
+    private static function unmapIpv4(string $ip): string
+    {
+        if (!str_contains($ip, ':')) {
+            return $ip;
+        }
+
+        $packed = @inet_pton($ip);
+
+        if ($packed !== false && self::isIpv4Mapped($packed)) {
+            $unmapped = @inet_ntop(substr($packed, 12));
+
+            if ($unmapped !== false) {
+                return $unmapped;
+            }
+        }
+
+        return $ip;
+    }
+
+    /**
+     * 判断 16 字节地址是否落在 ::ffff:0:0/96（IPv4-mapped）内
+     */
+    private static function isIpv4Mapped(string $packed): bool
+    {
+        return strlen($packed) === 16
+            && substr($packed, 0, 10) === str_repeat("\x00", 10)
+            && substr($packed, 10, 2) === "\xff\xff";
     }
 
     /**
@@ -326,13 +367,19 @@ class Plugin implements PluginInterface
     /**
      * 把单条规则解析为可比较的结构，非法规则返回 null
      *
-     * CIDR   → ['range', 起始整数, 结束整数]
-     * 点分式 → ['octets', [[下限, 上限] x4]]
+     * IPv4 CIDR   → ['range', 起始整数, 结束整数]
+     * IPv4 点分式 → ['octets', [[下限, 上限] x4]]
+     * IPv6        → ['prefix', 网络地址二进制, 前缀位数]  单个地址即 /128
      */
     private static function parseRule(string $rule): ?array
     {
         if ($rule === '') {
             return null;
+        }
+
+        // 含冒号即按 IPv6 处理: 区间与通配语法只适用于 IPv4
+        if (str_contains($rule, ':')) {
+            return self::parseIpv6Rule($rule);
         }
 
         if (str_contains($rule, '/')) {
@@ -383,6 +430,70 @@ class Plugin implements PluginInterface
         }
 
         return ['octets', $octets];
+    }
+
+    /**
+     * 解析 IPv6 规则：单个地址或 CIDR 前缀
+     *
+     * 统一转成 inet_pton 的 16 字节二进制, 因此 2001:db8::1 与 2001:0db8:0000::0001
+     * 这类等价写法自动视为同一地址, 不需要额外做文本归一化。
+     */
+    private static function parseIpv6Rule(string $rule): ?array
+    {
+        $bits = 128;
+
+        if (str_contains($rule, '/')) {
+            $segments = explode('/', $rule);
+
+            if (count($segments) !== 2) {
+                return null;
+            }
+
+            [$rule, $prefix] = $segments;
+            $prefix = trim($prefix);
+
+            if (!preg_match('/^\d{1,3}$/', $prefix)) {
+                return null;
+            }
+
+            $bits = (int) $prefix;
+
+            if ($bits > 128) {
+                return null;
+            }
+        }
+
+        $rule = trim($rule);
+
+        // 走 filter_var 而不是直接 inet_pton: 后者会接受一些畸形写法
+        if (filter_var($rule, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
+            return null;
+        }
+
+        $packed = @inet_pton($rule);
+
+        if ($packed === false || strlen($packed) !== 16) {
+            return null;
+        }
+
+        // ::ffff:a.b.c.d 这一段等价于 IPv4, 必须折回 IPv4 规则:
+        // 访客地址在 sanitizeIp() 里已被还原成 IPv4, 留成 IPv6 前缀就永远匹配不上。
+        if (self::isIpv4Mapped($packed)) {
+            // /96 以下的前缀跨出了映射区间, 语义上说不通, 直接判为非法
+            if ($bits < 96) {
+                return null;
+            }
+
+            $dotted = @inet_ntop(substr($packed, 12));
+
+            if ($dotted === false) {
+                return null;
+            }
+
+            return self::parseCidr($dotted . '/' . ($bits - 96));
+        }
+
+        return ['prefix', $packed, $bits];
     }
 
     /**
@@ -468,6 +579,9 @@ class Plugin implements PluginInterface
     /**
      * 判断 IP 是否命中规则表
      *
+     * IPv4 与 IPv6 规则互不串味: IPv4 地址只与 range/octets 比, IPv6 地址只与 prefix 比。
+     * (::ffff:1.2.3.4 已在 sanitizeIp() 里还原成 IPv4, 到这里就是普通 IPv4 地址。)
+     *
      * @param array<int, array> $rules
      */
     private static function matchIp(string $ip, array $rules): bool
@@ -476,7 +590,10 @@ class Plugin implements PluginInterface
             return false;
         }
 
-        // 规则语法目前仅覆盖 IPv4，IPv6 访客一律不命中
+        if (str_contains($ip, ':')) {
+            return self::matchIpv6($ip, $rules);
+        }
+
         $parts = explode('.', $ip);
 
         if (count($parts) !== 4) {
@@ -498,6 +615,10 @@ class Plugin implements PluginInterface
         }
 
         foreach ($rules as $rule) {
+            if ($rule[0] === 'prefix') {
+                continue;
+            }
+
             if ($rule[0] === 'range') {
                 if ($long >= $rule[1] && $long <= $rule[2]) {
                     return true;
@@ -521,5 +642,53 @@ class Plugin implements PluginInterface
         }
 
         return false;
+    }
+
+    /**
+     * 判断 IPv6 地址是否命中规则表中的前缀规则
+     *
+     * @param array<int, array> $rules
+     */
+    private static function matchIpv6(string $ip, array $rules): bool
+    {
+        $packed = @inet_pton($ip);
+
+        if ($packed === false || strlen($packed) !== 16) {
+            return false;
+        }
+
+        foreach ($rules as $rule) {
+            if ($rule[0] !== 'prefix') {
+                continue;
+            }
+
+            if (self::prefixMatches($packed, $rule[1], $rule[2])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 比较两个 16 字节地址的前 $bits 位是否相同
+     */
+    private static function prefixMatches(string $address, string $network, int $bits): bool
+    {
+        $wholeBytes = $bits >> 3;
+
+        if ($wholeBytes > 0 && strncmp($address, $network, $wholeBytes) !== 0) {
+            return false;
+        }
+
+        $remainingBits = $bits & 7;
+
+        if ($remainingBits === 0) {
+            return true;
+        }
+
+        $mask = (0xFF << (8 - $remainingBits)) & 0xFF;
+
+        return (ord($address[$wholeBytes]) & $mask) === (ord($network[$wholeBytes]) & $mask);
     }
 }

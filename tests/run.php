@@ -195,6 +195,123 @@ foreach ([
 }
 
 // ---------------------------------------------------------------------------
+$t->group('IPv6 单个地址与前缀');
+
+config(['ips' => "2001:db8::1\n2001:db8:dead::/48\nfe80::/10"]);
+
+foreach ([
+    ['2001:db8::1', true],
+    ['2001:db8::2', false],
+    ['2001:db8:dead::1', true],
+    ['2001:db8:dead:beef::1', true],
+    ['2001:db8:deae::1', false],
+    ['fe80::1', true],
+    ['febf:ffff::1', true],
+    ['fec0::1', false],
+    ['2001:db9::1', false],
+] as [$ip, $expected]) {
+    request($ip);
+    $t->assert(sprintf('%-22s → %s', $ip, $expected ? '拦截' : '放行'), blocked(), $expected);
+}
+
+// ---------------------------------------------------------------------------
+$t->group('IPv6 等价写法自动归一');
+// 规则与访客地址都过 inet_pton，缩写、前导零、大小写都不影响判定
+
+config(['ips' => '2001:0db8:0000:0000:0000:0000:0000:0001']);
+request('2001:db8::1');
+$t->assert('完整写法的规则命中缩写地址', blocked(), true);
+
+config(['ips' => '2001:db8::1']);
+request('2001:0DB8:0000:0000:0000:0000:0000:0001');
+$t->assert('缩写规则命中完整写法的地址', blocked(), true);
+
+config(['ips' => '2001:DB8::/32']);
+request('2001:db8:1::1');
+$t->assert('规则大小写不敏感', blocked(), true);
+
+config(['ips' => '::1']);
+request('0:0:0:0:0:0:0:1');
+$t->assert('回环地址两种写法等价', blocked(), true);
+
+config(['ips' => '::/0']);
+request('2001:db8::1');
+$t->assert('::/0 匹配全部 IPv6', blocked(), true);
+request('8.8.8.8');
+$t->assert('::/0 不波及 IPv4', blocked(), false);
+
+config(['ips' => '2001:db8::1/128']);
+request('2001:db8::1');
+$t->assert('显式 /128 等同单个地址', blocked(), true);
+request('2001:db8::2');
+$t->assert('/128 不多封一个', blocked(), false);
+
+// ---------------------------------------------------------------------------
+$t->group('IPv4 与 IPv6 规则互不串味');
+
+config(['ips' => '2001:db8::/32']);
+request('1.2.3.4');
+$t->assert('IPv6 规则不封 IPv4 访客', blocked(), false);
+
+config(['ips' => "1.2.3.4\n10.0.0.0/8\n192.168.*.*"]);
+request('2001:db8::1');
+$t->assert('IPv4 规则不封 IPv6 访客', blocked(), false);
+
+config(['ips' => "1.2.3.4\n2001:db8::/32"]);
+request('1.2.3.4');
+$t->assert('混合列表：IPv4 照常命中', blocked(), true);
+request('2001:db8::1');
+$t->assert('混合列表：IPv6 照常命中', blocked(), true);
+request('5.6.7.8');
+$t->assert('混合列表：不相干的 IPv4 放行', blocked(), false);
+request('2001:db9::1');
+$t->assert('混合列表：不相干的 IPv6 放行', blocked(), false);
+
+// ---------------------------------------------------------------------------
+$t->group('IPv4-mapped 地址归一成 IPv4');
+// 双栈监听的机器上 REMOTE_ADDR 常常是 ::ffff:192.0.2.1 这种形式
+
+config(['ips' => '192.0.2.0/24']);
+request('::ffff:192.0.2.1');
+$t->assert('v4-mapped 访客命中 IPv4 网段规则', blocked(), true);
+
+config(['ips' => '192.0.2.1']);
+request('::ffff:192.0.2.1');
+$t->assert('v4-mapped 访客命中 IPv4 单点规则', blocked(), true);
+
+config(['ips' => '192.0.2.5']);
+request('::ffff:192.0.2.1');
+$t->assert('v4-mapped 访客不会被误封', blocked(), false);
+
+config(['ips' => '::ffff:192.0.2.1']);
+request('192.0.2.1');
+$t->assert('写成 v4-mapped 的规则命中 IPv4 访客', blocked(), true);
+request('::ffff:192.0.2.1');
+$t->assert('写成 v4-mapped 的规则命中 v4-mapped 访客', blocked(), true);
+request('192.0.2.2');
+$t->assert('写成 v4-mapped 的规则不会多封', blocked(), false);
+
+config(['ips' => '::ffff:192.0.2.0/120']);
+request('192.0.2.77');
+$t->assert('v4-mapped 前缀等价于 /24', blocked(), true);
+request('192.0.3.1');
+$t->assert('v4-mapped 前缀不越界', blocked(), false);
+
+// ---------------------------------------------------------------------------
+$t->group('IPv6 也可以作为可信代理');
+
+config(['ips' => '1.2.3.4', 'trustedProxies' => '::1']);
+request('::1', ['HTTP_X_FORWARDED_FOR' => '1.2.3.4']);
+$t->assert('IPv6 可信代理转发的客户端被封', blocked(), true);
+
+request('2001:db8::1', ['HTTP_X_FORWARDED_FOR' => '1.2.3.4']);
+$t->assert('不在可信代理内的 IPv6 忽略代理头', blocked(), false);
+
+config(['ips' => '2001:db8::1', 'trustedProxies' => '10.0.0.0/8']);
+request('10.0.0.5', ['HTTP_X_FORWARDED_FOR' => '2001:db8::1']);
+$t->assert('代理头里的 IPv6 客户端被封', blocked(), true);
+
+// ---------------------------------------------------------------------------
 $t->group('非法规则在保存时被拒绝，而不是静默失效');
 
 foreach ([
@@ -208,6 +325,14 @@ foreach ([
     '192.168.1.0/',
     '.*',
     'abc',
+    '2001:db8::/129',
+    '2001:db8::/xx',
+    '2001:db8::/',
+    'gggg::1',
+    '2001:db8:::1',
+    '2001:db8::1-5',
+    '2001:db8::*',
+    '::ffff:192.0.2.0/64',
 ] as $rule) {
     $t->assert(sprintf('拒绝 %-14s', $rule), Plugin::checkRules($rule), false);
 }
@@ -216,6 +341,11 @@ foreach ([
     '1.2.3.4',
     "1.2.3.4\n10.0.0.0/8\n172.16.*.*",
     '10.0.0.1-20',
+    '2001:db8::1',
+    '2001:db8::/32',
+    '::1',
+    '::/0',
+    "1.2.3.4\n2001:db8::/32\nfe80::/10",
 ] as $rules) {
     $t->assert('接受合法规则 ' . str_replace("\n", ' / ', $rules), Plugin::checkRules($rules), true);
 }
@@ -398,6 +528,9 @@ config(['ips' => '1.2.3.4']);
 
 request('::1');
 $t->assert('IPv6 访客不命中 IPv4 规则', blocked(), false);
+
+request('fe80::1%eth0');
+$t->assert('带 zone id 的地址不被采信', blocked(), false);
 
 request('');
 $t->assert('REMOTE_ADDR 缺失则放行', blocked(), false);

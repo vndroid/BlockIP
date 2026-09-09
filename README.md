@@ -17,14 +17,22 @@ Download the source code or git clone to `usr/plugins/`, plug-in diractory name 
 
 ## Rule syntax
 
-IPv4 only, one rule per line:
+One rule per line; IPv4 and IPv6 rules can be mixed freely:
 
 | Syntax | Meaning |
 | --- | --- |
-| `192.168.1.1` | A single address |
+| `192.168.1.1` | A single IPv4 address |
 | `210.10.2.1-20` | Inclusive range, allowed in any octet |
 | `222.34.4.*` | Wildcard, same as `0-255` |
-| `192.168.1.0/24` | CIDR |
+| `192.168.1.0/24` | IPv4 CIDR |
+| `2001:db8::1` | A single IPv6 address |
+| `2001:db8::/32` | IPv6 prefix |
+
+Ranges and wildcards are IPv4-only. For IPv6 use a single address or a prefix — a single host usually owns an entire `/64`, so prefixes are what you actually want.
+
+IPv6 rules and visitor addresses are both normalised to their binary form, so `2001:db8::1`, `2001:0db8:0000:0000:0000:0000:0000:0001` and `2001:DB8::1` are the same address. IPv4 rules are only ever matched against IPv4 visitors and IPv6 rules against IPv6 visitors; the two families never bleed into each other.
+
+On a dual-stack listener `REMOTE_ADDR` may arrive as an IPv4-mapped address such as `::ffff:192.0.2.1`. It is unmapped to `192.0.2.1` before matching, so existing IPv4 rules keep working and need no rewriting.
 
 Unparsable rules are rejected when you save the settings, instead of silently doing nothing.
 
