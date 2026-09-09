@@ -3,13 +3,13 @@
 namespace TypechoPlugin\BlockIP;
 
 use Typecho\Config;
+use Typecho\Db;
 use Typecho\Request;
-use Typecho\Plugin\Exception;
 use Typecho\Plugin\PluginInterface;
+use Typecho\Widget\Exception as WidgetException;
 use Typecho\Widget\Helper\Form;
 use Typecho\Widget\Helper\Form\Element\Text;
 use Typecho\Widget\Helper\Form\Element\Textarea;
-use Widget\Archive;
 use Widget\Options;
 use Widget\User;
 
@@ -22,7 +22,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  *
  * @package BlockIP
  * @author Vex
- * @version 1.2.0
+ * @version 1.3.0
  * @link https://github.com/vndroid/BlockIP
  */
 class Plugin implements PluginInterface
@@ -37,7 +37,10 @@ class Plugin implements PluginInterface
      */
     public static function activate(): string
     {
-        \Typecho\Plugin::factory(Archive::class)->beforeRender = [self::class, 'blockIP'];
+        // 挂在 index.php 的 begin 上: 位于 Router::dispatch() 之前, 覆盖前台全部路由
+        // (页面、feed、/action/* 的评论与引用提交、xmlrpc、附件等), 且在任何数据库查询之前拦截。
+        // 后台 admin/*.php 走独立入口, 不经过此钩子, 因此天然不受影响。
+        \Typecho\Plugin::factory('index.php')->begin = [self::class, 'blockIP'];
 
         return _t("插件已启用");
     }
@@ -68,6 +71,12 @@ class Plugin implements PluginInterface
         $ips->addRule([self::class, 'checkNoEmptyLines'], _t('IP 黑名单列表中不能包含空行'));
         $ips->addRule([self::class, 'checkRules'], _t('IP 黑名单列表中存在无法识别的规则'));
         $form->addInput($ips);
+
+        $contactMail = new Text('contactMail', null, null, _t('联系邮箱'), _t(
+            '显示在拦截页面上，供被误封的访客申诉。留空则自动取 uid 为 1 的用户邮箱。'
+        ));
+        $contactMail->addRule([self::class, 'checkMail'], _t('联系邮箱格式不正确'));
+        $form->addInput($contactMail);
 
         $trustedProxies = new Textarea('trustedProxies', null, null, _t('可信代理网段'), _t(
             '默认留空：只按 TCP 连接地址（REMOTE_ADDR）判定，代理头一律不采信，无法伪造。<br>'
@@ -132,20 +141,91 @@ class Plugin implements PluginInterface
         return true;
     }
 
+    /**
+     * 检查联系邮箱格式
+     *
+     * @param string|null $text
+     * @return bool
+     */
+    public static function checkMail(?string $text): bool
+    {
+        $text = trim((string) $text);
+
+        return $text === '' || filter_var($text, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
     public static function personalConfig(Form $form)
     {}
 
     /**
      * 屏蔽 IP 访问
      *
-     * @throws Exception
+     * @throws WidgetException
      */
     public static function blockIP(): void
     {
-        if (self::checkIP()) {
-            $user = User::alloc();
-            throw new Exception('抱歉，当前 IP 段无法访问，如有问题，请<a href="mailto:' . $user->mail . '">联系站长</a>。');
+        // 放行已登录的管理员与编辑, 使后台发起的请求(评论审核、附件上传、xmlrpc 等,
+        // 这些都经由 index.php 而非 admin 入口)与后台页面本身的行为保持一致,
+        // 同时避免误封自己的 IP 之后把自己锁在门外。
+        try {
+            if (User::alloc()->pass('editor', true)) {
+                return;
+            }
+        } catch (\Throwable $e) {
+            // 登录态判定失败时按未登录处理
         }
+
+        if (!self::checkIP()) {
+            return;
+        }
+
+        // 必须是 Widget\Exception: Typecho\Common::error() 只对该类型透传 message,
+        // 其余类型一律覆盖成 "Server Error"; code 决定 HTTP 状态码, 0 会退化成 500。
+        throw new WidgetException(self::buildMessage(), 403);
+    }
+
+    /**
+     * 组装拦截页面上的提示语
+     *
+     * Common::error() 会对 message 做 nl2br() 后直接输出, 不做转义, 故此处自行转义
+     */
+    private static function buildMessage(): string
+    {
+        $message = '抱歉，当前 IP 段无法访问，如有问题，请';
+        $mail = self::getContactMail();
+
+        if ($mail === null) {
+            return $message . '联系管理员。';
+        }
+
+        return $message . '<a href="mailto:' . htmlspecialchars($mail, ENT_QUOTES) . '">联系管理员</a>。';
+    }
+
+    /**
+     * 取得联系邮箱: 优先用配置项, 留空则回落到 uid 为 1 的用户
+     *
+     * 只在确定要拦截时才会走到这里, 每个请求至多一次, 无需缓存
+     */
+    private static function getContactMail(): ?string
+    {
+        $configured = trim((string) (self::getConfig()->contactMail ?? ''));
+
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        try {
+            $db = Db::get();
+            $row = $db->fetchRow(
+                $db->select('mail')->from('table.users')->where('uid = ?', 1)->limit(1)
+            );
+            $mail = isset($row['mail']) ? trim((string) $row['mail']) : '';
+        } catch (\Throwable $e) {
+            // 取不到就不显示链接, 不能因此把整个拦截流程搞成 500
+            $mail = '';
+        }
+
+        return $mail === '' ? null : $mail;
     }
 
     /**
