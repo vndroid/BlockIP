@@ -1,6 +1,6 @@
 # BlockIP
 
-一款 Typecho 访客地址屏蔽插件，支持 Typecho 1.2 及以上版本。
+一款 Typecho 访客地址屏蔽插件，支持 Typecho 1.2 及以上版本，要求 PHP 8.2.0 或更高版本。
 
 ## 简介
 
@@ -23,7 +23,7 @@ git branch -u origin/main main
 git remote set-head origin -a
 ```
 
-全新安装则下载源码压缩包或者克隆仓库到插件目录 `usr/plugins/` ，插件目录名必须为 `BlockIP`，然后在 Typecho 后台启用插件即可。
+全新安装则下载源码压缩包或者克隆仓库到插件目录 `usr/plugins/` ，插件目录名必须为 `BlockIP`，然后在 Typecho 后台启用插件即可。启用前请确认服务器运行 PHP 8.2.0 或更高版本；不满足要求时插件会拒绝启用并显示当前 PHP 版本。
 
 ### 规则语法
 
@@ -48,7 +48,7 @@ IPv6 规则与访客地址都会做二进制归一，因此 `2001:db8::1`、`200
 
 ### 生效范围
 
-插件挂在 `index.php` 的 `begin` 钩子上（`Router::dispatch()` 之前），覆盖前台**全部**路由：页面、feed、`/action/*` 上的评论与引用提交、xmlrpc / pingback、附件等，并且在任何数据库查询之前就完成拦截。
+插件挂在 `index.php` 的 `begin` 钩子上（Typecho 初始化完成后、`Router::dispatch()` 之前），覆盖前台**全部**路由：页面、feed、`/action/*` 上的评论与引用提交、xmlrpc / pingback、附件等。
 
 后台 `admin/` 有独立入口，不经过该钩子，因此不受影响。后台**发起**的请求（评论审核、附件上传、xmlrpc）走的是 `index.php`，为使两者行为一致，已登录的**管理员与编辑**一律放行——这也避免了误封自己的 IP 之后被锁在门外。贡献者、关注者与未登录访客照常按 IP 判定。
 

@@ -1,6 +1,6 @@
 # BlockIP
 
-A Guest IP address Blocker plug-in for Typecho.
+A guest IP address blocker plugin for Typecho 1.2 or newer. PHP 8.2.0 or newer is required.
 
 ## Introduction
 
@@ -13,7 +13,7 @@ Current language: **English** | [简体中文](/README_CN.md)
 
 ## Usage
 
-Download the source code or git clone to `usr/plugins/`, plug-in diractory name MUST be `BlockIP`, then activate the plug-in in admin panel.
+Download the source code or clone the repository into `usr/plugins/`. The plugin directory name MUST be `BlockIP`; then activate the plugin in the admin panel. PHP 8.2.0 or newer is required. On an older runtime, the plugin refuses activation and reports the current PHP version.
 
 ## Rule syntax
 
@@ -38,7 +38,7 @@ Unparsable rules are rejected when you save the settings, instead of silently do
 
 ## Scope
 
-The plugin hooks `begin` in `index.php` (before `Router::dispatch()`), so it covers **every** front-end route: pages, feeds, comment and trackback submission under `/action/*`, xmlrpc / pingback, attachments — and it blocks before any database query runs.
+The plugin hooks `begin` in `index.php` (after Typecho initialisation and before `Router::dispatch()`), so it covers **every** front-end route: pages, feeds, comment and trackback submission under `/action/*`, xmlrpc / pingback and attachments.
 
 The admin area has its own entry point and is never routed through this hook, so it is unaffected. Requests *originating* from the admin area (comment moderation, uploads, xmlrpc) do go through `index.php`, so logged-in **administrators and editors** are always allowed through, keeping both consistent and making it impossible to lock yourself out by blocking your own IP. Contributors, subscribers and anonymous visitors are matched by IP as usual.
 

@@ -102,8 +102,8 @@ function blocked(): bool
 {
     try {
         Plugin::blockIP();
-    } catch (Throwable $e) {
-        return true;
+    } catch (Typecho\Widget\Exception $e) {
+        return $e->getCode() === 403;
     }
 
     return false;
@@ -124,6 +124,13 @@ function blockException(): ?Throwable
 }
 
 $t = new Runner();
+
+// ---------------------------------------------------------------------------
+$t->group('PHP 最低版本');
+
+$t->assert('PHP 8.1 不受支持', invoke('supportsPhpVersion', 80199), false);
+$t->assert('PHP 8.2 受支持', invoke('supportsPhpVersion', 80200), true);
+$t->assert('PHP 8.4 受支持', invoke('supportsPhpVersion', 80400), true);
 
 // 默认状态：未登录访客，站长邮箱可查
 Widget\User::$group = null;

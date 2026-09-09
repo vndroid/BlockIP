@@ -5,6 +5,7 @@ namespace TypechoPlugin\BlockIP;
 use Typecho\Config;
 use Typecho\Db;
 use Typecho\Request;
+use Typecho\Plugin\Exception as PluginException;
 use Typecho\Plugin\PluginInterface;
 use Typecho\Widget\Exception as WidgetException;
 use Typecho\Widget\Helper\Form;
@@ -28,6 +29,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 class Plugin implements PluginInterface
 {
     /**
+     * 最低支持的 PHP 版本：8.2.0
+     */
+    private const MIN_PHP_VERSION_ID = 80200;
+
+    /**
      * 默认采信的代理头（仅在配置了可信代理网段后生效）
      */
     private const DEFAULT_PROXY_HEADER = 'X-Forwarded-For';
@@ -37,12 +43,24 @@ class Plugin implements PluginInterface
      */
     public static function activate(): string
     {
+        if (!self::supportsPhpVersion(PHP_VERSION_ID)) {
+            throw new PluginException(_t('BlockIP 要求 PHP 8.2.0 或更高版本，当前版本为 %s', PHP_VERSION));
+        }
+
         // 挂在 index.php 的 begin 上: 位于 Router::dispatch() 之前, 覆盖前台全部路由
-        // (页面、feed、/action/* 的评论与引用提交、xmlrpc、附件等), 且在任何数据库查询之前拦截。
+        // (页面、feed、/action/* 的评论与引用提交、xmlrpc、附件等)。
         // 后台 admin/*.php 走独立入口, 不经过此钩子, 因此天然不受影响。
         \Typecho\Plugin::factory('index.php')->begin = [self::class, 'blockIP'];
 
         return _t("插件已启用");
+    }
+
+    /**
+     * 判断 PHP 运行时是否满足最低版本要求
+     */
+    private static function supportsPhpVersion(int $versionId): bool
+    {
+        return $versionId >= self::MIN_PHP_VERSION_ID;
     }
 
     /**
